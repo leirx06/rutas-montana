@@ -69,7 +69,7 @@ Después de publicar el repositorio, abre **Settings > Pages**. En **Build and d
 - **Tiempo en movimiento:** solo intervalos a más de 1 km/h.
 - **Pulsaciones:** se ignoran los valores a 0 (significan "sin dato").
 
-Cuando una actividad tiene datos confirmados en Strava que difieren del GPX, sus valores se pueden ajustar en `DATOS_STRAVA` dentro de `01_cargar_gpx.py`. Si las altitudes del GPX no son fiables, se marca el perfil como no disponible en lugar de dibujar uno incorrecto. Tras cambiar estos datos, vuelve a ejecutar ambos scripts para regenerar el resumen y la imagen.
+Si un dispositivo exporta un nombre de actividad genérico en el GPX, se puede asignar un nombre legible en `NOMBRES_RUTA` dentro de `01_cargar_gpx.py`. Los perfiles y métricas se calculan a partir de los GPX locales. Tras sustituir un GPX, vuelve a ejecutar ambos scripts para regenerar el resumen y la imagen.
 
 ## Limitaciones
 
