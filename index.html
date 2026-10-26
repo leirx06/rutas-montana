@@ -489,6 +489,12 @@
     let routeMap;
     const formatNumber = (value, digits = 0) =>
       new Intl.NumberFormat("es-ES", { maximumFractionDigits: digits }).format(value);
+    const formatDuration = (seconds) => {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = seconds % 60;
+      return `${hours} h ${String(minutes).padStart(2, "0")} min ${String(remainingSeconds).padStart(2, "0")} s`;
+    };
 
     function svgNode(name, attributes = {}) {
       const element = document.createElementNS(svgNamespace, name);
@@ -610,31 +616,46 @@
       document.querySelector("#detail-date").textContent = new Intl.DateTimeFormat("es-ES", {
         day: "2-digit", month: "long", year: "numeric", timeZone: "UTC",
       }).format(new Date(`${route.fecha.slice(0, 10)}T00:00:00Z`));
-      routeDialog.querySelector("#detail-chart").replaceWith(
-        createElevationChart(route.perfil, route.ruta)
-      );
+      const chart = route.perfil_disponible === false
+        ? document.createElement("p")
+        : createElevationChart(route.perfil, route.ruta);
+      if (route.perfil_disponible === false) {
+        chart.className = "route-status";
+        chart.textContent = "Perfil no disponible: las altitudes del GPX no son fiables.";
+      }
+      routeDialog.querySelector("#detail-chart").replaceWith(chart);
       const detailStats = document.querySelector("#detail-stats");
       detailStats.replaceChildren();
       addStat(detailStats, "Distancia", `${formatNumber(route.distancia_km, 2)} km`);
       addStat(detailStats, "Desnivel positivo", `+${formatNumber(route.desnivel_pos_m)} m`);
-      addStat(detailStats, "Desnivel negativo", `−${formatNumber(route.desnivel_neg_m)} m`);
-      addStat(detailStats, "Altitud mínima", `${formatNumber(route.alt_min_m)} m`);
-      addStat(detailStats, "Altitud máxima", `${formatNumber(route.alt_max_m)} m`);
-      addStat(detailStats, "Tiempo total", `${formatNumber(route.tiempo_total_h, 2)} h`);
-      addStat(detailStats, "Tiempo en movimiento", `${formatNumber(route.tiempo_mov_h, 2)} h`);
-      const speed = route.tiempo_mov_h
-        ? route.distancia_km / route.tiempo_mov_h
+      if (Number.isFinite(route.desnivel_neg_m)) {
+        addStat(detailStats, "Desnivel negativo", `−${formatNumber(route.desnivel_neg_m)} m`);
+      }
+      if (Number.isFinite(route.alt_min_m)) addStat(detailStats, "Altitud mínima", `${formatNumber(route.alt_min_m)} m`);
+      if (Number.isFinite(route.alt_max_m)) addStat(detailStats, "Altitud máxima", `${formatNumber(route.alt_max_m)} m`);
+      addStat(detailStats, "Tiempo transcurrido", formatDuration(route.tiempo_total_s));
+      addStat(detailStats, "Tiempo en movimiento", formatDuration(route.tiempo_mov_s));
+      const speed = route.tiempo_mov_s
+        ? route.distancia_km / (route.tiempo_mov_s / 3600)
         : null;
       addStat(detailStats, "Velocidad en movimiento", speed ? `${formatNumber(speed, 2)} km/h` : "Sin dato");
+      if (route.tiempo_mov_s && route.distancia_km) {
+        const paceSeconds = Math.round(route.tiempo_mov_s / route.distancia_km);
+        addStat(detailStats, "Ritmo", `${Math.floor(paceSeconds / 60)}:${String(paceSeconds % 60).padStart(2, "0")} min/km`);
+      }
       if (Number.isFinite(route.calorias_kcal)) {
         addStat(detailStats, "Calorías", `${formatNumber(route.calorias_kcal)} kcal`);
       }
+      if (Number.isFinite(route.pasos)) addStat(detailStats, "Pasos", formatNumber(route.pasos));
       const routeComment = comments[route.ruta];
       document.querySelector("#route-comment").textContent =
         typeof routeComment === "string" && routeComment.trim()
           ? routeComment.trim()
           : "Todavía no hay comentarios para esta ruta.";
-      profileReadout.textContent = "Mueve el cursor sobre el perfil para consultar distancia y altitud.";
+      profileReadout.hidden = route.perfil_disponible === false;
+      if (route.perfil_disponible !== false) {
+        profileReadout.textContent = "Mueve el cursor sobre el perfil para consultar distancia y altitud.";
+      }
       routeDialog.showModal();
       requestAnimationFrame(() => {
         showRouteMap(route);
@@ -725,12 +746,21 @@
         header.append(identity, icon);
         openHint.className = "route-open-hint";
         openHint.textContent = "Ver detalles de la ruta →";
-        openButton.append(header, createElevationChart(route.perfil, route.ruta, true), openHint);
+        if (route.perfil_disponible === false) {
+          const profileNotice = document.createElement("span");
+          profileNotice.className = "route-open-hint";
+          profileNotice.textContent = "Perfil de altitud no disponible";
+          openButton.append(header, profileNotice, openHint);
+        } else {
+          openButton.append(header, createElevationChart(route.perfil, route.ruta, true), openHint);
+        }
         openButton.addEventListener("click", () => showRouteDetails(route));
         addStat(stats, "Distancia", `${formatNumber(route.distancia_km, 2)} km`);
         addStat(stats, "Desnivel positivo", `+${formatNumber(route.desnivel_pos_m)} m`);
-        addStat(stats, "Desnivel negativo", `−${formatNumber(route.desnivel_neg_m)} m`);
-        addStat(stats, "Altitud máxima", `${formatNumber(route.alt_max_m)} m`);
+        if (Number.isFinite(route.desnivel_neg_m)) {
+          addStat(stats, "Desnivel negativo", `−${formatNumber(route.desnivel_neg_m)} m`);
+        }
+        if (Number.isFinite(route.alt_max_m)) addStat(stats, "Altitud máxima", `${formatNumber(route.alt_max_m)} m`);
         card.append(openButton, stats);
         routeGrid.append(card);
       });
@@ -757,7 +787,9 @@
     ])
       .then(([routes, routeComments]) => {
         if (!Array.isArray(routes)) throw new Error("El resumen de rutas tiene un formato inesperado.");
-        if (routes.some((route) => !Array.isArray(route.perfil) || route.perfil.length < 2)) {
+        if (routes.some((route) =>
+          route.perfil_disponible !== false && (!Array.isArray(route.perfil) || route.perfil.length < 2)
+        )) {
           throw new Error("Faltan perfiles de elevación. Vuelve a generar el resumen de rutas.");
         }
         if (!routeComments || typeof routeComments !== "object" || Array.isArray(routeComments)) {

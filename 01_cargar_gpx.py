@@ -24,6 +24,23 @@ DATA_DIR = Path(__file__).parent / "data"
 OUT_DIR = Path(__file__).parent / "output"
 OUT_DIR.mkdir(exist_ok=True)
 
+# Datos confirmados en Strava. El perfil de esta actividad no se publica porque
+# las altitudes del GPX están aplanadas y no representan el recorrido.
+DATOS_STRAVA = {
+    "Ruta Roca Foradad y Coll de Porc": {
+        "distancia_km": 7.93,
+        "desnivel_pos_m": 906,
+        "desnivel_neg_m": None,
+        "alt_min_m": None,
+        "alt_max_m": None,
+        "tiempo_total_s": 3 * 3600 + 13 * 60 + 19,
+        "tiempo_mov_s": 2 * 3600 + 20 * 60 + 33,
+        "calorias_kcal": 813,
+        "pasos": 12124,
+        "perfil_disponible": False,
+    },
+}
+
 # Espacios de nombres XML (el GPX los usa y hay que indicarlos para encontrar las etiquetas)
 NS = {
     "g": "http://www.topografix.com/GPX/1/1",
@@ -153,7 +170,9 @@ def resumen(df: pd.DataFrame) -> dict:
         "alt_min_m": round(df["ele"].min()),
         "alt_max_m": round(df["ele"].max()),
         "tiempo_total_h": round(total_h, 2),
+        "tiempo_total_s": round(total_h * 3600),
         "tiempo_mov_h": round(mov_h, 2),
+        "tiempo_mov_s": round(mov_h * 3600),
         "vel_media_mov_kmh": round(dist_km / mov_h, 2) if mov_h else np.nan,
         "pendiente_media_subida_%": round(subida / (dist_km * 1000) * 100, 1),
         "hr_media": round(hr_valida.mean()) if len(hr_valida) else np.nan,
@@ -200,6 +219,23 @@ def main():
     res = pd.DataFrame([resumen(t) for t in tablas]).sort_values("fecha", ascending=False)
     if any(valor is not None for valor in calorias_por_ruta.values()):
         res["calorias_kcal"] = res["ruta"].map(calorias_por_ruta)
+    if any("calorias_kcal" in datos for datos in DATOS_STRAVA.values()):
+        if "calorias_kcal" not in res:
+            res["calorias_kcal"] = np.nan
+    if any("pasos" in datos for datos in DATOS_STRAVA.values()):
+        res["pasos"] = pd.NA
+    res["perfil_disponible"] = True
+    for nombre, datos in DATOS_STRAVA.items():
+        coincide = res["ruta"] == nombre
+        if not coincide.any():
+            raise SystemExit(f"No se encontró en los GPX la ruta con datos de Strava: {nombre}")
+        for columna, valor in datos.items():
+            res.loc[coincide, columna] = valor
+        res.loc[coincide, "tiempo_total_h"] = round(datos["tiempo_total_s"] / 3600, 2)
+        res.loc[coincide, "tiempo_mov_h"] = round(datos["tiempo_mov_s"] / 3600, 2)
+        res.loc[coincide, "vel_media_mov_kmh"] = round(
+            datos["distancia_km"] / (datos["tiempo_mov_s"] / 3600), 2
+        )
 
     puntos.to_csv(OUT_DIR / "puntos.csv", index=False)
     res.to_csv(OUT_DIR / "resumen.csv", index=False)
@@ -212,13 +248,22 @@ def main():
         "alt_min_m",
         "alt_max_m",
         "tiempo_total_h",
+        "tiempo_total_s",
         "tiempo_mov_h",
+        "tiempo_mov_s",
+        "perfil_disponible",
     ]
     if "calorias_kcal" in res.columns:
         columnas_publicas.append("calorias_kcal")
+    if "pasos" in res.columns:
+        columnas_publicas.append("pasos")
     resumen_publico = res[columnas_publicas].copy()
     perfiles_por_ruta = {
-        df["ruta"].iloc[0]: perfil_publico(df)
+        df["ruta"].iloc[0]: (
+            perfil_publico(df)
+            if res.loc[res["ruta"] == df["ruta"].iloc[0], "perfil_disponible"].iloc[0]
+            else []
+        )
         for df in tablas
     }
     trazados_por_ruta = {

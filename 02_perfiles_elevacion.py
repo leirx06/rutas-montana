@@ -33,6 +33,29 @@ ejes = ejes.flatten()
 for ax, nombre in zip(ejes, rutas):
     d = puntos[puntos["ruta"] == nombre]
     r = resumen[resumen["ruta"] == nombre].iloc[0]
+    perfil_disponible = (
+        bool(r["perfil_disponible"])
+        if "perfil_disponible" in resumen.columns
+        else True
+    )
+    desnivel_negativo = (
+        f" / -{r['desnivel_neg_m']:.0f} m"
+        if pd.notna(r["desnivel_neg_m"])
+        else ""
+    )
+    ax.set_title(
+        f"{nombre}  ·  {r['fecha']:%d/%m/%Y}\n"
+        f"{r['distancia_km']:.1f} km  |  +{r['desnivel_pos_m']:.0f} m{desnivel_negativo}",
+        fontsize=10, loc="left", fontweight="bold", linespacing=1.5,
+    )
+    if not perfil_disponible:
+        ax.text(
+            0.5, 0.5, "Perfil de altitud no disponible\nAltitudes del GPX no fiables",
+            transform=ax.transAxes, ha="center", va="center", color="#626e67",
+        )
+        ax.set_xticks([])
+        ax.set_yticks([])
+        continue
 
     # Suavizamos un poco la altitud (media móvil de 15 puntos) para quitar el ruido del GPS
     ele = d["ele"].rolling(15, center=True, min_periods=1).mean()
@@ -46,13 +69,6 @@ for ax, nombre in zip(ejes, rutas):
     ax.annotate(f"{ele[i_max]:.0f} m", (d.loc[i_max, "dist_acum_km"], ele[i_max]),
                 textcoords="offset points", xytext=(0, 7), ha="center", fontsize=8,
                 color=PUNTO_ALTO)
-
-    # Título en dos líneas: nombre y fecha arriba, estadísticas debajo (así no tapan la línea)
-    ax.set_title(
-        f"{nombre}  ·  {r['fecha']:%d/%m/%Y}\n"
-        f"{r['distancia_km']:.1f} km  |  +{r['desnivel_pos_m']:.0f} m / -{r['desnivel_neg_m']:.0f} m",
-        fontsize=10, loc="left", fontweight="bold", linespacing=1.5,
-    )
 
     ax.set_ylim(ele.min() - 20, ele.max() + 0.12 * (ele.max() - ele.min()) + 10)
     ax.set_xlim(0, d["dist_acum_km"].max())
