@@ -620,6 +620,7 @@
         ? document.createElement("p")
         : createElevationChart(route.perfil, route.ruta);
       if (route.perfil_disponible === false) {
+        chart.id = "detail-chart";
         chart.className = "route-status";
         chart.textContent = "Perfil no disponible: las altitudes del GPX no son fiables.";
       }
